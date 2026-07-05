@@ -219,7 +219,22 @@
             }
         };
 
-        window.handleLogout = function() {
+                window.handleLogout = async function() {
+            // 1. लॉगआउट करने से पहले, स्टूडेंट की फाइल में लॉगआउट का समय सेव करें
+            const activeSession = localStorage.getItem('academy_active_session');
+            if (activeSession) {
+                const user = JSON.parse(activeSession);
+                try {
+                    const studentRef = doc(db, "students", user.mobile);
+                    await updateDoc(studentRef, {
+                        lastLogout: serverTimestamp() // यह Firebase में 'lastLogout' फील्ड जोड़ देगा
+                    });
+                } catch (err) {
+                    console.log("Could not update last logout:", err);
+                }
+            }
+
+            // 2. पुराने सारे काम
             localStorage.removeItem('academy_active_session');
             document.getElementById('log-mobile').value = "";
             document.getElementById('log-password').value = "";
@@ -229,6 +244,7 @@
             window.checkSession();
             window.switchAuthView('login');
         };
+
 
         window.checkSession = function() {
             const activeSession = localStorage.getItem('academy_active_session');
