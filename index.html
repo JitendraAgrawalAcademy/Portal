@@ -307,10 +307,9 @@
         };
 
         // NEW DEBUG SCRIPT: Error samajhne ke liye alert notifications
-        window.handleGoogleLogin = async function() {
+                window.handleGoogleLogin = async function() {
             try {
-                alert("Google connection shuru ho raha hai... Kripya thoda intezaar karein."); 
-                
+                // Testing wala alert hata diya gaya hai taaki browser popup ko block na kare
                 const result = await signInWithPopup(auth, googleProvider);
                 const userEmail = result.user.email.toLowerCase();
 
@@ -323,16 +322,21 @@
                     };
                     localStorage.setItem('academy_active_session', JSON.stringify(adminUser));
                     window.checkSession();
+                    // Login successful hone ke baad ka alert rehne diya hai
                     alert("Admin Login Successful! Panel khul raha hai.");
                 } else {
-                    alert("Access Denied! Sirf Admin (jitu.universe) hi allowed hai.");
+                    alert("Access Denied! Sirf Admin hi allowed hai.");
                     await signOut(auth);
                 }
             } catch (error) {
                 console.error("Google Login Error:", error);
-                alert("Login Error Aa Gaya: " + error.message);
+                // Agar aap galti se popup band kar dete hain, toh error nahi dikhayega
+                if(error.code !== 'auth/popup-closed-by-user') {
+                    alert("Login Error: " + error.message);
+                }
             }
         };
+
 
         window.handleLogout = async function() {
             const activeSession = localStorage.getItem('academy_active_session');
