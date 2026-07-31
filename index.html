@@ -1,1 +1,832 @@
+```html
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sath-Sath Collaborative Canvas</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Mobile par swipe-to-refresh / bounce rokne ke liye */
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overscroll-behavior: none; }
+        
+        #canvas-container {
+            width: 100%;
+            flex: 1; 
+            overflow: hidden; 
+            background-color: #f3f4f6; 
+            position: relative;
+            cursor: grab; 
+        }
+        #drawing-board {
+            display: block;
+            touch-action: none; 
+        }
+        .tool-btn.active {
+            background-color: #3b82f6; 
+            color: white;
+        }
+        
+        /* Toolbar ke liye horizontal scrollbar hide */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* Toast Notification */
+        #toast {
+            visibility: hidden;
+            min-width: 250px;
+            background-color: #333;
+            color: #fff;
+            text-align: center;
+            border-radius: 8px;
+            padding: 12px;
+            position: fixed;
+            z-index: 100;
+            left: 50%;
+            bottom: 30px;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.3s, bottom 0.3s;
+        }
+        #toast.show {
+            visibility: visible;
+            opacity: 1;
+            bottom: 50px;
+        }
+        
+        /* Grid background pattern */
+        .bg-grid {
+            background-size: 40px 40px;
+            background-image: 
+                linear-gradient(to right, rgba(0,0,0,0.05) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(0,0,0,0.05) 1px, transparent 1px);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 h-screen overflow-hidden flex flex-col">
+
+    <div id="toast">Message</div>
+
+    <!-- 1. GOOGLE LOGIN SCREEN -->
+    <div id="login-screen" class="flex items-center justify-center h-screen bg-gray-100 absolute inset-0 z-40 transition-opacity duration-300">
+        <div class="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full text-center">
+            <h1 class="text-3xl font-bold text-indigo-600 mb-2"><i class="fa-solid fa-infinity"></i> Infinite Canvas</h1>
+            <p class="text-gray-500 mb-8">Apne doston ke sath draw karein aur baat karein</p>
+            
+            <button id="login-btn" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 px-4 rounded-lg focus:outline-none focus:shadow-outline flex items-center justify-center gap-3 transition duration-200 shadow-md">
+                <i class="fa-brands fa-google text-xl"></i> Google se Login Karein
+            </button>
+            <p class="text-xs text-gray-400 mt-4">Aapka account surakshit hai.</p>
+        </div>
+    </div>
+
+    <!-- 2. ROOM SELECTION SCREEN -->
+    <div id="room-screen" class="hidden flex items-center justify-center h-screen bg-gray-100 absolute inset-0 z-30 transition-opacity duration-300">
+        <div class="bg-white p-6 sm:p-8 rounded-2xl shadow-xl max-w-md w-full mx-4">
+            <div class="text-center mb-6 flex flex-col items-center">
+                <img id="user-profile-pic" src="" alt="Profile" class="w-16 h-16 rounded-full mb-3 shadow-sm border-2 border-indigo-100 hidden">
+                <h2 class="text-2xl font-bold text-gray-800">Swagat hai, <span id="display-name" class="text-indigo-600"></span>!</h2>
+                <p class="text-gray-500 mt-1">Naya canvas banayein ya doston ke room mein judein.</p>
+            </div>
+
+            <button id="create-room-btn" class="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-3 px-4 rounded mb-6 flex items-center justify-center gap-2 transition duration-200 shadow">
+                <i class="fa-solid fa-plus"></i> Naya Canvas Banayein
+            </button>
+
+            <div class="relative flex py-5 items-center">
+                <div class="flex-grow border-t border-gray-300"></div>
+                <span class="flex-shrink-0 mx-4 text-gray-400">Ya</span>
+                <div class="flex-grow border-t border-gray-300"></div>
+            </div>
+
+            <div class="mb-4">
+                <input class="shadow appearance-none border rounded w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-indigo-500 uppercase text-center font-bold tracking-widest" id="room-code-input" type="text" placeholder="CODE DAALEIN">
+            </div>
+            <button id="join-room-btn" class="w-full bg-teal-500 hover:bg-teal-600 text-white font-bold py-3 px-4 rounded flex items-center justify-center gap-2 transition duration-200 shadow">
+                <i class="fa-solid fa-right-to-bracket"></i> Canvas Mein Judein
+            </button>
+            
+            <button id="logout-btn" class="w-full mt-6 text-gray-500 hover:text-red-500 text-sm font-semibold transition">
+                <i class="fa-solid fa-arrow-right-from-bracket"></i> Logout
+            </button>
+        </div>
+    </div>
+
+    <!-- 3. MAIN CANVAS SCREEN -->
+    <div id="canvas-screen" class="hidden flex-1 flex flex-col h-full w-full overflow-hidden">
+        <!-- Top Navbar -->
+        <header class="bg-white shadow-sm p-2 sm:p-3 flex flex-wrap justify-between items-center z-20 gap-2 flex-shrink-0 w-full">
+            <div class="flex items-center gap-2 sm:gap-3">
+                <h1 class="text-lg font-bold text-gray-800 hidden sm:block"><i class="fa-solid fa-infinity text-indigo-500"></i></h1>
+                <div class="bg-indigo-50 text-indigo-700 px-2 py-1 sm:px-3 rounded-md text-xs sm:text-sm font-bold border border-indigo-200 flex items-center gap-1 sm:gap-2">
+                    Room: <span id="current-room-display" class="tracking-wider">----</span>
+                    <button id="copy-link-btn" class="hover:text-indigo-900 ml-1" title="Code Copy Karein">
+                        <i class="fa-regular fa-copy"></i>
+                    </button>
+                </div>
+                
+                <button id="invite-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded-md text-sm font-semibold flex items-center gap-2 transition shadow-sm hidden sm:flex" title="Doston ko bulayein">
+                    <i class="fa-solid fa-user-plus"></i> Invite
+                </button>
+                <button id="invite-btn-mobile" class="bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 rounded-md text-xs font-semibold flex items-center justify-center transition shadow-sm sm:hidden" title="Doston ko bulayein">
+                    <i class="fa-solid fa-user-plus"></i>
+                </button>
+            </div>
+            
+            <!-- Zoom Controls -->
+            <div class="flex items-center bg-gray-100 rounded-md p-1 border border-gray-200 order-last w-full sm:w-auto sm:order-none justify-center mt-1 sm:mt-0">
+                <button id="zoom-out-btn" class="px-3 py-1 hover:bg-gray-200 rounded text-gray-600" title="Zoom Out"><i class="fa-solid fa-minus"></i></button>
+                <span id="zoom-display" class="px-4 text-sm font-mono text-gray-700 font-semibold">100%</span>
+                <button id="zoom-in-btn" class="px-3 py-1 hover:bg-gray-200 rounded text-gray-600" title="Zoom In"><i class="fa-solid fa-plus"></i></button>
+                <div class="w-px h-4 bg-gray-300 mx-2"></div>
+                <button id="reset-view-btn" class="px-3 py-1 hover:bg-gray-200 rounded text-gray-600 text-sm" title="Center View"><i class="fa-solid fa-expand"></i></button>
+            </div>
+
+            <div class="flex items-center gap-2 sm:gap-3">
+                <div class="text-sm text-gray-600 font-medium hidden sm:flex items-center gap-2">
+                    <img id="small-profile-pic" src="" class="w-6 h-6 rounded-full hidden">
+                    <span id="user-badge" class="bg-gray-200 px-2 py-1 rounded font-semibold text-gray-800"></span>
+                </div>
+                
+                <button id="mic-btn" class="bg-gray-200 hover:bg-gray-300 px-3 py-1 rounded text-gray-700 transition flex items-center justify-center" title="Voice Call Join Karein">
+                    <i class="fa-solid fa-microphone-slash"></i>
+                </button>
+
+                <button id="leave-room-btn" class="text-red-500 hover:text-red-700 text-sm font-semibold p-2" title="Room Chhodein">
+                    <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Tools Navbar (Scrollable on mobile) -->
+        <div class="bg-gray-800 text-white p-2 flex justify-start sm:justify-center items-center gap-2 sm:gap-4 shadow-md z-10 flex-shrink-0 w-full overflow-x-auto no-scrollbar">
+            <button class="tool-btn active p-2 rounded hover:bg-gray-700 transition flex-shrink-0" data-tool="pan" title="Pan (Hilaane ke liye)">
+                <i class="fa-solid fa-hand"></i>
+            </button>
+            <div class="w-px h-6 bg-gray-600 mx-1 flex-shrink-0"></div>
+            <button class="tool-btn p-2 rounded hover:bg-gray-700 transition flex-shrink-0" data-tool="pen" title="Pen Tool">
+                <i class="fa-solid fa-pen"></i>
+            </button>
+            <button class="tool-btn p-2 rounded hover:bg-gray-700 transition flex-shrink-0" data-tool="text" title="Text Tool">
+                <i class="fa-solid fa-font"></i>
+            </button>
+            
+            <div class="w-px h-6 bg-gray-600 mx-1 flex-shrink-0 hidden sm:block"></div>
+            
+            <input type="color" id="color-picker" value="#000000" class="w-8 h-8 rounded cursor-pointer self-center border-0 p-0 flex-shrink-0" title="Rang Chunein">
+            <input type="range" id="size-picker" min="1" max="20" value="3" class="w-20 sm:w-24 self-center cursor-pointer flex-shrink-0" title="Motai">
+            
+            <div class="w-px h-6 bg-gray-600 mx-1 flex-shrink-0"></div>
+            
+            <label class="p-2 rounded hover:bg-gray-700 transition cursor-pointer flex items-center justify-center flex-shrink-0" title="Image Upload Karein">
+                <i class="fa-solid fa-image"></i>
+                <input type="file" id="image-upload" accept="image/*" class="hidden">
+            </label>
+            <button class="tool-btn p-2 rounded hover:bg-red-700 transition text-red-400 hover:text-white ml-auto flex-shrink-0" id="clear-btn" title="Sab Mitao">
+                <i class="fa-solid fa-trash"></i>
+            </button>
+        </div>
+
+        <!-- Canvas Area -->
+        <div id="canvas-container" class="bg-grid">
+            <canvas id="drawing-board"></canvas>
+        </div>
+    </div>
+
+    <!-- Audio Container (WebRTC) -->
+    <div id="audio-container" class="hidden"></div>
+
+    <!-- FIREBASE AND APP LOGIC -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        // GoogleAuthProvider aur signInWithPopup import kiya
+        import { getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, writeBatch, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- USER PROVIDED FIREBASE CONFIG ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyA3-ejSQaioMbvML2_MyhA6Wx3HRuLbId4",
+            authDomain: "jitendraagrawalgamifiedbooks.firebaseapp.com",
+            projectId: "jitendraagrawalgamifiedbooks",
+            storageBucket: "jitendraagrawalgamifiedbooks.firebasestorage.app",
+            messagingSenderId: "372085011686",
+            appId: "1:372085011686:web:794252f47944ef66aa7727",
+            measurementId: "G-RPQZ9GZBJM"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const logicalAppId = 'sath-sath-canvas';
+
+        // State Variables
+        let currentUser = null;
+        let userName = "";
+        let currentRoomId = null;
+        let unsubscribeSnapshot = null;
+        let unsubscribeSignals = null; 
+        let canvasElements = [];
+        let imageCache = {}; 
+
+        // --- VOICE CALL (WebRTC) STATE ---
+        let localAudioStream = null;
+        let peers = {}; 
+        let processedSignals = new Set();
+        let isVoiceConnected = false;
+        let isMuted = true;
+        const webrtcConfig = {
+            iceServers: [ { urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' } ]
+        };
+
+        // --- CANVAS SETUP ---
+        const canvasContainer = document.getElementById('canvas-container');
+        const canvas = document.getElementById('drawing-board');
+        const ctx = canvas.getContext('2d');
+        
+        let currentTool = 'pan'; 
+        let isDrawing = false;
+        let isPanning = false;
+        let currentStroke = [];
+        
+        let transform = { x: 0, y: 0, scale: 1 };
+        let panStart = { x: 0, y: 0 };
+        
+        const toastEl = document.getElementById('toast');
+        const zoomDisplay = document.getElementById('zoom-display');
+
+        function resizeCanvas() {
+            canvas.width = canvasContainer.clientWidth;
+            canvas.height = canvasContainer.clientHeight;
+            requestAnimationFrame(redrawCanvas);
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+        function showToast(message) {
+            toastEl.innerText = message;
+            toastEl.className = "show";
+            setTimeout(() => { toastEl.className = toastEl.className.replace("show", ""); }, 3000);
+        }
+
+        // --- GOOGLE AUTHENTICATION LOGIC ---
+        const provider = new GoogleAuthProvider();
+
+        function showScreen(screenId) {
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('room-screen').classList.add('hidden');
+            document.getElementById('canvas-screen').classList.add('hidden');
+            document.getElementById(screenId).classList.remove('hidden');
+        }
+
+        onAuthStateChanged(auth, (user) => {
+            currentUser = user;
+            if (user) {
+                // User info setup
+                userName = user.displayName || "Student";
+                document.getElementById('display-name').innerText = userName;
+                document.getElementById('user-badge').innerText = userName.split(" ")[0]; // First name only for badge
+                
+                if (user.photoURL) {
+                    const profPic = document.getElementById('user-profile-pic');
+                    const smallPic = document.getElementById('small-profile-pic');
+                    profPic.src = user.photoURL;
+                    smallPic.src = user.photoURL;
+                    profPic.classList.remove('hidden');
+                    smallPic.classList.remove('hidden');
+                }
+                
+                showScreen('room-screen');
+                document.getElementById('login-btn').innerHTML = '<i class="fa-brands fa-google text-xl"></i> Google se Login Karein';
+            } else {
+                showScreen('login-screen');
+            }
+        });
+
+        document.getElementById('login-btn').addEventListener('click', async () => {
+            try {
+                document.getElementById('login-btn').innerHTML = '<i class="fa-solid fa-spinner fa-spin text-xl"></i> Login ho raha hai...';
+                await signInWithPopup(auth, provider);
+            } catch (error) {
+                console.error("Google Login Error:", error);
+                showToast("Login fail hua! Firebase Console me Google Auth enable karein.");
+                document.getElementById('login-btn').innerHTML = '<i class="fa-brands fa-google text-xl"></i> Google se Login Karein';
+            }
+        });
+
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            await signOut(auth);
+            showToast("Aapne logout kar liya hai.");
+        });
+
+        // --- ROOM & INVITE LOGIC ---
+        function generateRoomCode() { return Math.random().toString(36).substring(2, 8).toUpperCase(); }
+
+        function joinRoom(roomId) {
+            if (!currentUser) return;
+            currentRoomId = roomId;
+            document.getElementById('current-room-display').innerText = roomId;
+            
+            showScreen('canvas-screen');
+            
+            setTimeout(() => {
+                resizeCanvas(); 
+                resetView();    
+                listenToCanvasEvents(roomId);
+                listenToSignals(roomId);
+            }, 50);
+            
+            showToast(`Room ${roomId} join kiya!`);
+        }
+
+        document.getElementById('create-room-btn').addEventListener('click', () => joinRoom(generateRoomCode()));
+        document.getElementById('join-room-btn').addEventListener('click', () => {
+            const code = document.getElementById('room-code-input').value.trim().toUpperCase();
+            if (code) joinRoom(code); else showToast("Room Code zaroori hai");
+        });
+
+        const copyToClipboard = (text, successMessage) => {
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).then(() => showToast(successMessage)).catch(() => fallbackCopy(text, successMessage));
+            } else { fallbackCopy(text, successMessage); }
+        };
+
+        const fallbackCopy = (text, successMessage) => {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed"; 
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try { if (document.execCommand('copy')) showToast(successMessage); } catch (err) {}
+            document.body.removeChild(textArea);
+        };
+
+        document.getElementById('copy-link-btn').addEventListener('click', () => {
+            if(currentRoomId) copyToClipboard(currentRoomId, "Code copy kiya!");
+        });
+
+        const handleInvite = () => {
+            if (!currentRoomId) return;
+            const shareText = `Aao Sath-Sath Canvas par draw karein! Mera Room Code hai: ${currentRoomId}\n\nApp par aakar ye code daalein aur jud jayein.`;
+            
+            if (navigator.share) {
+                navigator.share({ title: 'Canvas Invite', text: shareText }).catch(() => {});
+            } else {
+                copyToClipboard(shareText, "Code copy! WhatsApp khul raha hai...");
+                setTimeout(() => {
+                    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(shareText)}`, '_blank');
+                }, 800);
+            }
+        };
+
+        document.getElementById('invite-btn').addEventListener('click', handleInvite);
+        document.getElementById('invite-btn-mobile').addEventListener('click', handleInvite);
+
+        document.getElementById('leave-room-btn').addEventListener('click', () => {
+            if (unsubscribeSnapshot) { unsubscribeSnapshot(); unsubscribeSnapshot = null; }
+            if (unsubscribeSignals) { unsubscribeSignals(); unsubscribeSignals = null; }
+            disconnectVoice();
+            currentRoomId = null;
+            canvasElements = [];
+            imageCache = {};
+            showScreen('room-screen');
+        });
+
+        // --- FIREBASE SYNC LOGIC ---
+        function listenToCanvasEvents(roomId) {
+            const roomRef = collection(db, 'artifacts', logicalAppId, 'public', 'data', 'canvas_google_' + roomId);
+            
+            unsubscribeSnapshot = onSnapshot(roomRef, (snapshot) => {
+                canvasElements = [];
+                snapshot.forEach((doc) => { canvasElements.push({...doc.data(), id: doc.id}); });
+                canvasElements.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+                requestAnimationFrame(redrawCanvas);
+            }, (error) => { console.error("Sync error:", error); });
+        }
+
+        async function saveElementToFirebase(elementData) {
+            if (!currentUser || !currentRoomId) return;
+            try {
+                elementData.timestamp = Date.now();
+                elementData.author = userName;
+                const roomRef = collection(db, 'artifacts', logicalAppId, 'public', 'data', 'canvas_google_' + currentRoomId);
+                await addDoc(roomRef, elementData);
+            } catch (error) { console.error("Save Error:", error); }
+        }
+        
+        document.getElementById('clear-btn').addEventListener('click', async () => {
+            if(!confirm("Kya aap sach mein pura canvas mitana chahte hain?")) return;
+            if(!currentRoomId) return;
+            
+            const roomRef = collection(db, 'artifacts', logicalAppId, 'public', 'data', 'canvas_google_' + currentRoomId);
+            const snapshot = await getDocs(roomRef);
+            
+            const batch = writeBatch(db);
+            snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+            await batch.commit();
+            showToast("Canvas clear kar diya gaya hai.");
+        });
+
+        // --- VOICE CALL (WebRTC) LOGIC ---
+        const micBtn = document.getElementById('mic-btn');
+        
+        micBtn.addEventListener('click', async () => {
+            if (!isVoiceConnected) {
+                try {
+                    micBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+                    localAudioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    isVoiceConnected = true;
+                    isMuted = false;
+                    updateMicIcon();
+                    sendSignal({ type: 'join', target: 'all' });
+                    showToast("Aap Voice Call mein jud gaye hain!");
+                } catch (error) {
+                    updateMicIcon();
+                    showToast("Microphone access block hai. Settings check karein.");
+                }
+            } else {
+                isMuted = !isMuted;
+                localAudioStream.getAudioTracks().forEach(track => track.enabled = !isMuted);
+                updateMicIcon();
+                showToast(isMuted ? "Mic Mute ho gaya" : "Mic Unmute ho gaya");
+            }
+        });
+
+        function updateMicIcon() {
+            micBtn.classList.remove('bg-gray-200', 'bg-green-100', 'bg-red-100');
+            if (!isVoiceConnected) {
+                micBtn.innerHTML = '<i class="fa-solid fa-microphone-slash text-gray-500"></i>';
+                micBtn.classList.add('bg-gray-200');
+            } else if (isMuted) {
+                micBtn.innerHTML = '<i class="fa-solid fa-microphone-slash text-red-500"></i>';
+                micBtn.classList.add('bg-red-100');
+            } else {
+                micBtn.innerHTML = '<i class="fa-solid fa-microphone text-green-700"></i>';
+                micBtn.classList.add('bg-green-100');
+            }
+        }
+
+        async function sendSignal(payload) {
+            if (!currentUser || !currentRoomId) return;
+            payload.sender = currentUser.uid;
+            payload.timestamp = Date.now();
+            const sigRef = collection(db, 'artifacts', logicalAppId, 'public', 'data', 'webrtc_google_' + currentRoomId);
+            await addDoc(sigRef, payload);
+        }
+
+        function listenToSignals(roomId) {
+            const sigRef = collection(db, 'artifacts', logicalAppId, 'public', 'data', 'webrtc_google_' + roomId);
+            const joinTime = Date.now(); 
+            processedSignals.clear();
+            
+            unsubscribeSignals = onSnapshot(sigRef, (snapshot) => {
+                snapshot.docChanges().forEach(async (change) => {
+                    if (change.type === 'added') {
+                        const data = change.doc.data();
+                        if (data.timestamp < joinTime || data.sender === currentUser.uid) return;
+                        if (data.target !== 'all' && data.target !== currentUser.uid) return;
+                        if (processedSignals.has(change.doc.id)) return;
+                        processedSignals.add(change.doc.id);
+                        await processSignal(data);
+                    }
+                });
+            });
+        }
+
+        async function processSignal(data) {
+            if (!isVoiceConnected) return;
+            const senderId = data.sender;
+            try {
+                if (data.type === 'join') {
+                    const pc = createPeerConnection(senderId);
+                    const offer = await pc.createOffer();
+                    await pc.setLocalDescription(offer);
+                    sendSignal({ type: 'offer', target: senderId, sdp: offer.sdp, type_sdp: offer.type });
+                } else if (data.type === 'offer') {
+                    const pc = createPeerConnection(senderId);
+                    await pc.setRemoteDescription(new RTCSessionDescription({ type: data.type_sdp, sdp: data.sdp }));
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    sendSignal({ type: 'answer', target: senderId, sdp: answer.sdp, type_sdp: answer.type });
+                } else if (data.type === 'answer') {
+                    const pc = peers[senderId];
+                    if (pc) await pc.setRemoteDescription(new RTCSessionDescription({ type: data.type_sdp, sdp: data.sdp }));
+                } else if (data.type === 'candidate') {
+                    const pc = peers[senderId];
+                    if (pc && pc.remoteDescription) { 
+                        await pc.addIceCandidate(new RTCIceCandidate(JSON.parse(data.candidate)));
+                    } else if (pc) {
+                        setTimeout(() => pc.addIceCandidate(new RTCIceCandidate(JSON.parse(data.candidate))).catch(e=>{}), 1500);
+                    }
+                } else if (data.type === 'leave') {
+                    closePeerConnection(senderId);
+                }
+            } catch (err) {}
+        }
+
+        function createPeerConnection(peerId) {
+            if (peers[peerId]) return peers[peerId];
+            const pc = new RTCPeerConnection(webrtcConfig);
+            peers[peerId] = pc;
+            
+            if (localAudioStream) {
+                localAudioStream.getTracks().forEach(track => pc.addTrack(track, localAudioStream));
+            }
+            
+            pc.onicecandidate = (event) => {
+                if (event.candidate) sendSignal({ type: 'candidate', target: peerId, candidate: JSON.stringify(event.candidate) });
+            };
+            
+            pc.ontrack = (event) => {
+                let audioEl = document.getElementById(`audio-${peerId}`);
+                if (!audioEl) {
+                    audioEl = document.createElement('audio');
+                    audioEl.id = `audio-${peerId}`;
+                    audioEl.autoplay = true;
+                    document.getElementById('audio-container').appendChild(audioEl);
+                }
+                audioEl.srcObject = event.streams[0];
+            };
+            
+            pc.onconnectionstatechange = () => {
+                if(pc.connectionState === 'disconnected' || pc.connectionState === 'failed') closePeerConnection(peerId);
+            };
+            return pc;
+        }
+
+        function closePeerConnection(peerId) {
+            if (peers[peerId]) { peers[peerId].close(); delete peers[peerId]; }
+            const audioEl = document.getElementById(`audio-${peerId}`);
+            if (audioEl) audioEl.remove();
+        }
+
+        function disconnectVoice() {
+            if (isVoiceConnected) {
+                sendSignal({ type: 'leave', target: 'all' });
+                if (localAudioStream) localAudioStream.getTracks().forEach(track => track.stop());
+                Object.keys(peers).forEach(peerId => closePeerConnection(peerId));
+                isVoiceConnected = false;
+                isMuted = true;
+                updateMicIcon();
+            }
+        }
+
+        // --- COORDINATE MATH & ZOOM ---
+        function screenToWorld(x, y) {
+            return { x: (x - transform.x) / transform.scale, y: (y - transform.y) / transform.scale };
+        }
+
+        function getEventPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            let clientX, clientY;
+            if (e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX; clientY = e.touches[0].clientY;
+            } else {
+                clientX = e.clientX; clientY = e.clientY;
+            }
+            return { x: clientX - rect.left, y: clientY - rect.top };
+        }
+
+        function updateZoomDisplay() {
+            zoomDisplay.innerText = Math.round(transform.scale * 100) + '%';
+            const scaledGridSize = 40 * transform.scale;
+            canvasContainer.style.backgroundSize = `${scaledGridSize}px ${scaledGridSize}px`;
+            canvasContainer.style.backgroundPosition = `${transform.x}px ${transform.y}px`;
+        }
+
+        function zoom(amount, centerX = canvas.width / 2, centerY = canvas.height / 2) {
+            const oldScale = transform.scale;
+            let newScale = Math.max(0.1, Math.min(oldScale * amount, 5));
+            if (oldScale === newScale) return;
+            transform.x = centerX - (centerX - transform.x) * (newScale / oldScale);
+            transform.y = centerY - (centerY - transform.y) * (newScale / oldScale);
+            transform.scale = newScale;
+            updateZoomDisplay();
+            requestAnimationFrame(redrawCanvas);
+        }
+
+        function resetView() {
+            transform = { x: 0, y: 0, scale: 1 };
+            updateZoomDisplay();
+            requestAnimationFrame(redrawCanvas);
+        }
+
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const pos = getEventPos(e);
+            if (e.ctrlKey || e.metaKey) {
+                zoom(e.deltaY < 0 ? 1.1 : 0.9, pos.x, pos.y);
+            } else {
+                transform.x -= e.deltaX; transform.y -= e.deltaY;
+                updateZoomDisplay(); requestAnimationFrame(redrawCanvas);
+            }
+        }, { passive: false });
+
+        document.getElementById('zoom-in-btn').addEventListener('click', () => zoom(1.2));
+        document.getElementById('zoom-out-btn').addEventListener('click', () => zoom(1 / 1.2));
+        document.getElementById('reset-view-btn').addEventListener('click', resetView);
+
+        // --- INTERACTION LOGIC (DRAW / PAN / TEXT) ---
+        document.querySelectorAll('.tool-btn').forEach(btn => {
+            if(btn.id === 'clear-btn') return;
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tool-btn:not(#clear-btn)').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentTool = btn.dataset.tool;
+                if (currentTool === 'text') canvasContainer.style.cursor = 'text';
+                else if (currentTool === 'pan') canvasContainer.style.cursor = 'grab';
+                else canvasContainer.style.cursor = 'crosshair';
+            });
+        });
+
+        const pointerDown = (e) => {
+            if (e.target.id === 'temp-text-input') return;
+            if(e.type !== 'touchstart') e.preventDefault(); 
+            
+            const screenPos = getEventPos(e);
+            const isPanAction = currentTool === 'pan' || e.button === 1 || e.button === 2;
+
+            if (isPanAction) {
+                isPanning = true;
+                panStart = { x: screenPos.x - transform.x, y: screenPos.y - transform.y };
+                canvasContainer.style.cursor = 'grabbing';
+            } else if (currentTool === 'pen') {
+                isDrawing = true;
+                const worldPos = screenToWorld(screenPos.x, screenPos.y);
+                currentStroke = [{ x: worldPos.x, y: worldPos.y }];
+                
+                ctx.save();
+                ctx.translate(transform.x, transform.y);
+                ctx.scale(transform.scale, transform.scale);
+                ctx.beginPath();
+                ctx.moveTo(worldPos.x, worldPos.y);
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.strokeStyle = document.getElementById('color-picker').value;
+                ctx.lineWidth = document.getElementById('size-picker').value / transform.scale;
+                ctx.restore();
+            } else if (currentTool === 'text') {
+                 if (document.getElementById('temp-text-input')) return;
+                 const worldPos = screenToWorld(screenPos.x, screenPos.y);
+                 const color = document.getElementById('color-picker').value;
+                 const size = document.getElementById('size-picker').value * 4;
+
+                 const input = document.createElement('input');
+                 input.id = 'temp-text-input';
+                 input.type = 'text';
+                 input.placeholder = 'Likhkar Enter dabayein...';
+                 input.style.position = 'absolute';
+                 input.style.left = screenPos.x + 'px';
+                 input.style.top = screenPos.y + 'px';
+                 input.style.transform = 'translateY(-50%)'; 
+                 input.style.fontSize = (size * transform.scale) + 'px';
+                 input.style.color = color;
+                 input.style.background = 'rgba(255, 255, 255, 0.9)';
+                 input.style.border = '2px dashed #3b82f6';
+                 input.style.outline = 'none';
+                 input.style.padding = '4px 8px';
+                 input.style.borderRadius = '4px';
+                 input.style.zIndex = '100';
+                 input.style.minWidth = '200px';
+
+                 canvasContainer.appendChild(input);
+                 setTimeout(() => input.focus(), 10);
+
+                 const saveText = () => {
+                     const text = input.value;
+                     if (text && text.trim() !== "") {
+                         saveElementToFirebase({ type: 'text', content: text, x: worldPos.x, y: worldPos.y, color: color, size: size });
+                     }
+                     if (input.parentNode) input.parentNode.removeChild(input);
+                 };
+                 input.addEventListener('blur', saveText);
+                 input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') saveText(); });
+            }
+        };
+
+        const pointerMove = (e) => {
+            if(e.type !== 'touchmove') e.preventDefault();
+            const screenPos = getEventPos(e);
+
+            if (isPanning) {
+                transform.x = screenPos.x - panStart.x;
+                transform.y = screenPos.y - panStart.y;
+                updateZoomDisplay();
+                requestAnimationFrame(redrawCanvas);
+            } else if (isDrawing && currentTool === 'pen') {
+                const worldPos = screenToWorld(screenPos.x, screenPos.y);
+                currentStroke.push({ x: worldPos.x, y: worldPos.y });
+                const prevPoint = currentStroke[currentStroke.length - 2];
+                
+                ctx.save();
+                ctx.translate(transform.x, transform.y);
+                ctx.scale(transform.scale, transform.scale);
+                ctx.beginPath();
+                ctx.moveTo(prevPoint.x, prevPoint.y);
+                ctx.lineTo(worldPos.x, worldPos.y);
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.strokeStyle = document.getElementById('color-picker').value;
+                ctx.lineWidth = document.getElementById('size-picker').value / transform.scale;
+                ctx.stroke();
+                ctx.restore();
+            }
+        };
+
+        const pointerUp = (e) => {
+            if (isPanning) {
+                isPanning = false;
+                if(currentTool === 'pan') canvasContainer.style.cursor = 'grab';
+            } else if (isDrawing && currentTool === 'pen') {
+                isDrawing = false;
+                if (currentStroke.length > 1) {
+                    saveElementToFirebase({
+                        type: 'stroke', points: currentStroke,
+                        color: document.getElementById('color-picker').value,
+                        size: document.getElementById('size-picker').value
+                    });
+                }
+                currentStroke = [];
+            }
+        };
+
+        canvas.addEventListener('mousedown', pointerDown);
+        canvas.addEventListener('mousemove', pointerMove);
+        window.addEventListener('mouseup', pointerUp); 
+        canvas.addEventListener('contextmenu', e => e.preventDefault()); 
+
+        canvas.addEventListener('touchstart', pointerDown, {passive: false});
+        canvas.addEventListener('touchmove', pointerMove, {passive: false});
+        window.addEventListener('touchend', pointerUp);
+
+        // --- IMAGE UPLOAD LOGIC ---
+        document.getElementById('image-upload').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                    const MAX_WIDTH = 500;
+                    let width = img.width, height = img.height;
+                    if (width > MAX_WIDTH) { const ratio = MAX_WIDTH / width; width *= ratio; height *= ratio; }
+                    
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = width; tempCanvas.height = height;
+                    const tempCtx = tempCanvas.getContext('2d');
+                    tempCtx.drawImage(img, 0, 0, width, height);
+                    const compressedBase64 = tempCanvas.toDataURL('image/jpeg', 0.7);
+                    
+                    const centerWorldPos = screenToWorld(canvas.width / 2, canvas.height / 2);
+                    saveElementToFirebase({ type: 'image', dataUrl: compressedBase64, x: centerWorldPos.x - (width / 2), y: centerWorldPos.y - (height / 2), width: width, height: height });
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+            e.target.value = "";
+        });
+
+        // --- RENDER ENGINE ---
+        function redrawCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.save();
+            ctx.translate(transform.x, transform.y);
+            ctx.scale(transform.scale, transform.scale);
+            
+            canvasElements.forEach(element => {
+                if (element.type === 'stroke') {
+                    if (!element.points || element.points.length === 0) return;
+                    ctx.beginPath();
+                    ctx.moveTo(element.points[0].x, element.points[0].y);
+                    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+                    ctx.strokeStyle = element.color || '#000';
+                    ctx.lineWidth = element.size || 3; 
+                    for (let i = 1; i < element.points.length; i++) {
+                        ctx.lineTo(element.points[i].x, element.points[i].y);
+                    }
+                    ctx.stroke();
+                } else if (element.type === 'text') {
+                    ctx.font = `${element.size || 20}px Arial`;
+                    ctx.fillStyle = element.color || '#000';
+                    ctx.fillText(element.content, element.x, element.y);
+                } else if (element.type === 'image') {
+                    if (imageCache[element.id]) {
+                        ctx.drawImage(imageCache[element.id], element.x, element.y, element.width, element.height);
+                    } else {
+                        const img = new Image();
+                        img.src = element.dataUrl;
+                        img.onload = () => { imageCache[element.id] = img; requestAnimationFrame(redrawCanvas); };
+                    }
+                }
+            });
+            ctx.restore();
+        }
+    </script>
+</body>
+</html>
+
+
+```
 
