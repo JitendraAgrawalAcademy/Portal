@@ -39,7 +39,8 @@
         #ui-layer { position: absolute; top: 0; left: 0; right: 0; z-index: 40; pointer-events: none; display: flex; flex-direction: column; transition: transform 0.3s ease; }
         #ui-layer > * { pointer-events: auto; } 
 
-        #jitsi-container { position: absolute; top: -9999px; left: -9999px; width: 100px; height: 100px; z-index: -10; opacity: 0; pointer-events: none; }
+        /* 🌟 VOICE CHAT MIC BUG FIX (Visible to browser, hidden to user) */
+        #jitsi-container { position: absolute; top: 0; left: 0; width: 10px; height: 10px; z-index: 1; opacity: 0.01; pointer-events: none; }
     </style>
 </head>
 <body>
@@ -142,6 +143,7 @@
                 </div>
             </div>
 
+            <!-- TEACHER CONTROLS -->
             <div id="teacher-controls" class="hidden bg-orange-100 border-b border-orange-200 p-2 flex flex-wrap justify-center gap-2 sm:gap-4 w-full shadow-inner flex-shrink-0">
                 <button id="toggle-lock-btn" class="bg-white border border-orange-400 text-orange-700 px-3 py-1 rounded text-xs sm:text-sm font-bold shadow-sm transition flex items-center gap-2">
                     <i class="fa-solid fa-lock-open" id="lock-icon"></i> <span id="lock-text">Lock Canvas</span>
@@ -188,6 +190,7 @@
                 <iframe id="game-iframe" allowfullscreen="true" allow="autoplay; camera; microphone"></iframe>
             </div>
             <canvas id="drawing-layer"></canvas>
+            <div id="labels-layer" style="position: absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index: 35; transform-origin: 0 0;"></div>
         </div>
 
         <button id="toggle-ui-fab" class="hidden absolute bottom-6 right-6 z-50 bg-indigo-600 hover:bg-indigo-700 text-white w-14 h-14 rounded-full shadow-2xl items-center justify-center text-2xl transition transform hover:scale-105" title="Force Hide/Show Menus for Everyone">
@@ -369,6 +372,7 @@
             }
         });
 
+        // 🌟 JITSI VOICE CHAT (FIXED FOR BROWSER PERMISSIONS)
         document.getElementById('voice-btn').addEventListener('click', () => {
             if (!currentRoomId) return showToast("Pehle class join karein!");
             
@@ -379,7 +383,11 @@
                     width: 100, 
                     height: 100,
                     parentNode: document.getElementById('jitsi-container'),
-                    configOverwrite: { startWithAudioMuted: false, startWithVideoMuted: true },
+                    configOverwrite: { 
+                        startWithAudioMuted: false, 
+                        startWithVideoMuted: true,
+                        prejoinPageEnabled: false // BYPASS PRE-JOIN SO MIC ASKS DIRECTLY
+                    },
                     interfaceConfigOverwrite: { filmStripOnly: true },
                     userInfo: { displayName: myNickname }
                 };
@@ -405,60 +413,6 @@
             }
         });
 
-        // 🌟 🔥 THE ULTIMATE HACKER FIX: GLOBAL MAGIC EFFECTS OVERLAY 🔥 🌟
-        function spawnMagicEffect(name, screenX, screenY, colorCode) {
-            
-            // 1. CREATE A HUGE BLUE MAGIC GLOW AT THE EXACT CLICK SPOT
-            const flare = document.createElement('div');
-            flare.className = "fixed rounded-full pointer-events-none z-[999998]";
-            flare.style.left = `${screenX}px`;
-            flare.style.top = `${screenY}px`;
-            flare.style.width = '20px';
-            flare.style.height = '20px';
-            // Glowing Blue Colors
-            flare.style.backgroundColor = 'rgba(59, 130, 246, 0.4)'; 
-            flare.style.boxShadow = '0 0 25px 15px rgba(59, 130, 246, 0.8)';
-            
-            flare.style.transform = `translate(-50%, -50%) scale(0.5)`;
-            flare.style.transition = "all 0.6s cubic-bezier(0.25, 1, 0.5, 1)"; 
-            document.body.appendChild(flare);
-
-            // 2. CREATE THE FLYING NAME ROCKET
-            const label = document.createElement('div');
-            label.className = "fixed px-3 py-1 text-white text-[13px] font-black rounded-full shadow-2xl pointer-events-none flex items-center gap-2 whitespace-nowrap border-2 border-white z-[999999]";
-            label.style.backgroundColor = colorCode; 
-            label.style.left = `${screenX}px`;
-            label.style.top = `${screenY}px`;
-            label.style.transform = `translate(-50%, -50%) scale(0)`;
-            label.style.opacity = "0";
-            
-            label.innerHTML = `<i class="fa-solid fa-paper-plane"></i> ${name}`;
-            document.body.appendChild(label);
-            
-            // ANIMATE BOTH (Flare explodes, Name flies up)
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    // Flare explodes and fades
-                    flare.style.transform = `translate(-50%, -50%) scale(4)`;
-                    flare.style.opacity = "0";
-
-                    // Label pops out
-                    label.style.transition = "transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s";
-                    label.style.transform = `translate(-50%, -50%) scale(1)`;
-                    label.style.opacity = "1";
-                    
-                    // Label flies up and fades
-                    setTimeout(() => {
-                        label.style.transition = "all 1s ease-in";
-                        label.style.top = `${screenY - 120}px`; 
-                        label.style.opacity = "0";
-                    }, 500); 
-                });
-            });
-            
-            setTimeout(() => { flare.remove(); label.remove(); }, 1600);
-        }
-
         window.editNickname = async function() {
             if(!currentUser) return;
             const newName = prompt("Apna Naya Nickname daalein:", myNickname);
@@ -477,8 +431,6 @@
                     const clickTs = Date.now();
                     lastProcessedClickTs = clickTs; 
                     
-                    // The magic happens here! e.data.x is the exact percentage relative to the unscaled iframe.
-                    // We map that to the parent screen's actual scaled pixels!
                     const worldX = e.data.x * workspace.clientWidth;
                     const worldY = e.data.y * workspace.clientHeight;
                     
@@ -489,16 +441,42 @@
                     
                     if (currentRoomId) {
                         getRoomRef(currentRoomId).set({ 
-                            lastClick: { type: e.data.type, x: e.data.x, y: e.data.y, ts: clickTs, uid: currentUser.uid },
+                            lastClick: { type: e.data.type, x: e.data.x, y: e.data.y, val: e.data.val, ts: clickTs, uid: currentUser.uid },
                             lastAction: actionData
                         }, { merge: true }).catch(console.error);
                     }
                     
-                    // 🌟 TRIGGER THE VISUALS IMMEDIATELY ON SENDER'S SCREEN
-                    spawnMagicEffect(myNickname, screenX, screenY, '#3b82f6');
+                    // Trigger Local Visuals
+                    spawnFlyingName(myNickname, screenX, screenY, '#3b82f6');
                 }
             }
         });
+
+        // 🌟 GLOBAL VISUALS SCRIPT (ROCKET + CANVAS)
+        function spawnFlyingName(name, screenX, screenY, colorCode) {
+            const label = document.createElement('div');
+            label.className = "fixed px-4 py-2 text-white text-[14px] font-black rounded-full shadow-2xl pointer-events-none flex items-center gap-2 whitespace-nowrap border-2 border-white z-[999999]";
+            label.style.backgroundColor = colorCode === '#000000' ? '#4b5563' : colorCode; 
+            label.style.left = `${screenX}px`;
+            label.style.top = `${screenY}px`;
+            label.style.transform = `translate(-50%, -50%) scale(0.5)`;
+            label.style.opacity = "0";
+            label.style.transition = "all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)"; 
+            label.innerHTML = `<i class="fa-solid fa-rocket"></i> ${name}`;
+            document.body.appendChild(label);
+            
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                label.style.transform = `translate(-50%, -50%) scale(1)`;
+                label.style.opacity = "1";
+                setTimeout(() => {
+                    label.style.transition = "all 1.2s cubic-bezier(0.25, 1, 0.5, 1)";
+                    label.style.top = `${screenY - 150}px`; 
+                    label.style.opacity = "0";
+                    label.style.transform = `translate(-50%, -50%) scale(1.2)`;
+                }, 500); 
+            }));
+            setTimeout(() => label.remove(), 2000);
+        }
 
         function showToast(message) {
             const toastEl = document.getElementById('toast');
@@ -664,7 +642,7 @@
             } catch(e) { showToast("Connection issue: " + e.message); }
         }
 
-        // 🌟 🔥 THE HACKER IFRAME SCRIPT 🔥 🌟
+        // 🌟 🔥 THE ULTIMATE HACKER IFRAME SCRIPT (LOCAL + REMOTE GLOW SYNC) 🔥 🌟
         function renderHTMLInIframe(htmlCode) {
             if(!htmlCode) { gameIframe.src = 'about:blank'; return; }
             let code = htmlCode.trim(); const isUrl = /^https?:\/\//i.test(code);
@@ -672,7 +650,22 @@
 
             if (isUrl) { gameIframe.src = code; } 
             else {
-                const autoSyncScript = "<script>\n" +
+                const autoSyncScript = "<style>\n" +
+                "@keyframes sspGlow {\n" +
+                "    0% { box-shadow: 0 0 0px 0px rgba(59,130,246,1); background-color: rgba(59,130,246,0.5); transform: scale(1); }\n" +
+                "    50% { box-shadow: 0 0 30px 10px rgba(59,130,246,0.8); background-color: rgba(59,130,246,0.2); transform: scale(1.05); }\n" +
+                "    100% { box-shadow: 0 0 0px 0px rgba(59,130,246,0); background-color: transparent; transform: scale(1); }\n" +
+                "}\n" +
+                ".ssp-glow-effect { animation: sspGlow 0.6s cubic-bezier(0.25, 1, 0.5, 1) forwards !important; border-radius: 8px; }\n" +
+                "</style>\n" +
+                "<script>\n" +
+                "function highlightEl(el) {\n" +
+                "    if(!el || !el.style) return;\n" +
+                "    el.classList.remove('ssp-glow-effect');\n" +
+                "    void el.offsetWidth;\n" +
+                "    el.classList.add('ssp-glow-effect');\n" +
+                "    setTimeout(() => el.classList.remove('ssp-glow-effect'), 600);\n" +
+                "}\n" +
                 "let lastSend = 0;\n" +
                 "function sendClick(e) {\n" +
                 "    if(!e.isTrusted) return;\n" +
@@ -680,19 +673,32 @@
                 "    let cx = e.clientX, cy = e.clientY;\n" +
                 "    if(e.touches && e.touches.length > 0) { cx = e.touches[0].clientX; cy = e.touches[0].clientY; }\n" +
                 "    if(cx === undefined) return;\n" +
+                "    highlightEl(e.target);\n" +
                 "    window.parent.postMessage({ type: 'GAME_CLICK', x: cx/window.innerWidth, y: cy/window.innerHeight }, '*');\n" +
                 "}\n" +
                 "document.addEventListener('pointerdown', sendClick, true);\n" +
                 "document.addEventListener('click', sendClick, true);\n" +
+                "document.addEventListener('input', (e) => {\n" +
+                "    if(!e.isTrusted) return;\n" +
+                "    highlightEl(e.target);\n" +
+                "    let r = e.target.getBoundingClientRect();\n" +
+                "    window.parent.postMessage({ type: 'GAME_INPUT', x: (r.left+r.width/2)/window.innerWidth, y: (r.top+r.height/2)/window.innerHeight, val: e.target.value }, '*');\n" +
+                "}, true);\n" +
                 "window.addEventListener('message', (e) => {\n" +
-                "    if(e.data && e.data.type === 'SIMULATE_CLICK') {\n" +
+                "    if(e.data && (e.data.type === 'SIMULATE_CLICK' || e.data.type === 'SIMULATE_INPUT')) {\n" +
                 "        let px = e.data.x * window.innerWidth; let py = e.data.y * window.innerHeight;\n" +
                 "        let el = document.elementFromPoint(px, py);\n" +
                 "        if(el) {\n" +
-                "            el.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true, clientX: px, clientY: py}));\n" +
-                "            el.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, clientX: px, clientY: py}));\n" +
-                "            el.dispatchEvent(new MouseEvent('click', {bubbles: true, clientX: px, clientY: py}));\n" +
-                "            el.dispatchEvent(new PointerEvent('pointerup', {bubbles: true, clientX: px, clientY: py}));\n" +
+                "            highlightEl(el);\n" + // THIS TRIGGERS THE GLOW ON OTHER STUDENTS PHONES
+                "            if(e.data.type === 'SIMULATE_CLICK') {\n" +
+                "                el.dispatchEvent(new PointerEvent('pointerdown', {bubbles: true, clientX: px, clientY: py}));\n" +
+                "                el.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, clientX: px, clientY: py}));\n" +
+                "                el.dispatchEvent(new MouseEvent('click', {bubbles: true, clientX: px, clientY: py}));\n" +
+                "                el.dispatchEvent(new PointerEvent('pointerup', {bubbles: true, clientX: px, clientY: py}));\n" +
+                "            } else if(e.data.type === 'SIMULATE_INPUT' && (el.tagName==='INPUT'||el.tagName==='TEXTAREA')) {\n" +
+                "                el.value = e.data.val;\n" +
+                "                el.dispatchEvent(new Event('input', {bubbles: true})); el.dispatchEvent(new Event('change', {bubbles: true}));\n" +
+                "            }\n" +
                 "        }\n" +
                 "    }\n" +
                 "});\n" +
@@ -752,25 +758,23 @@
                 if (isCanvasLocked) { notice.classList.remove('hidden'); currentTool = 'pan'; updateToolUI(); } else { notice.classList.add('hidden'); }
             }
 
-            // 🌟 RENDER VISUALS FOR REMOTE USERS
+            // 🌟 RENDER VISUALS FOR REMOTE USERS (Glow & Name Tags syncs here)
             if (state.lastAction && state.lastAction.ts > lastProcessedActionTs) {
                 lastProcessedActionTs = state.lastAction.ts;
-                if(state.lastAction.uid !== currentUser.uid) { // Avoid rendering our own twice
+                if(state.lastAction.uid !== currentUser.uid) { // Prevent rendering our own twice
                     
                     let screenX, screenY;
                     if(state.lastAction.isGame) {
-                        // Game mapping
                         const worldX = state.lastAction.x * workspace.clientWidth;
                         const worldY = state.lastAction.y * workspace.clientHeight;
                         screenX = (worldX * transform.scale) + transform.x;
                         screenY = (worldY * transform.scale) + transform.y;
                     } else {
-                        // Canvas mapping
                         screenX = (state.lastAction.x * transform.scale) + transform.x;
                         screenY = (state.lastAction.y * transform.scale) + transform.y;
                     }
                     
-                    spawnMagicEffect(state.lastAction.name, screenX, screenY, state.lastAction.color);
+                    spawnFlyingName(state.lastAction.name, screenX, screenY, state.lastAction.color);
                 }
             }
 
@@ -781,14 +785,16 @@
                     renderHTMLInIframe(state.htmlCode); gameIframe.setAttribute('data-current-code', state.htmlCode);
                 }
 
+                // 🌟 SENDING THE SIGNAL TO GAME IFRAME FOR REMOTE USERS TO EXECUTE THE GLOW + CLICK
                 if (state.lastClick && state.lastClick.ts > lastProcessedClickTs) {
                     lastProcessedClickTs = state.lastClick.ts;
-                    if (state.lastClick.uid !== currentUser.uid) { // ONLY send to game if we didn't click it
+                    if (state.lastClick.uid !== currentUser.uid) { 
                         if (gameIframe.contentWindow) {
                             gameIframe.contentWindow.postMessage({ 
-                                type: 'SIMULATE_CLICK', 
+                                type: state.lastClick.type === 'GAME_INPUT' ? 'SIMULATE_INPUT' : 'SIMULATE_CLICK', 
                                 x: state.lastClick.x, 
-                                y: state.lastClick.y
+                                y: state.lastClick.y,
+                                val: state.lastClick.val
                             }, '*');
                         }
                     }
@@ -1073,9 +1079,10 @@
                     const actionData = { uid: currentUser.uid, name: myNickname, x: lastP.x, y: lastP.y, color: strokeData.color, ts: Date.now(), isGame: false };
                     getRoomRef(currentRoomId).set({ lastAction: actionData }, { merge: true });
                     
+                    // Canvas Name tag spawn
                     const screenX = (lastP.x * transform.scale) + transform.x;
                     const screenY = (lastP.y * transform.scale) + transform.y;
-                    spawnMagicEffect(myNickname, screenX, screenY, strokeData.color);
+                    spawnFlyingName(myNickname, screenX, screenY, strokeData.color);
                 }
                 currentStroke = [];
             }
